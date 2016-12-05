@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <ctime>
 
+// Project headers
+#include "tinyfiledialogs.h"
+
 //What mode the program will run in
 enum load_video_type { LOAD_VIDEO_FILE, LOAD_VIDEO_FEED };
 
@@ -61,29 +64,23 @@ void FFT(cv::Mat &input, cv::Mat &output, int flag)
         dft(input, output, flag);
 }
 
-cv::VideoCapture load_video(load_video_type type, char * file_loc = NULL)
+cv::VideoCapture load_video(load_video_type type, char const * file_loc = NULL)
 {
     cv::VideoCapture cap;
     if (type == LOAD_VIDEO_FILE)
-    {
-        std::string file_location(file_loc);
-        std::cout << file_location << std::endl;
-
-        cap = cv::VideoCapture(file_location);
-    }
+        cap = cv::VideoCapture(file_loc);
     else
     {
         cv::Mat test;
         cap = cv::VideoCapture(0);
         cap.set(CV_CAP_PROP_FPS, 26);
-        std::cout << "Check if your video is working and align the shot how you see fit" << std::endl;
-        std::cout << "When you are ready press any key to start the calibration" << std::endl;
+        tinyfd_messageBox("Video check", "Check if your video is working and align the shot how you see fit.\nWhen you are ready press any key to end the calibration.", "ok", "info", 1);
         while (true)
         {
             if (!cap.read(test))
             {
-                std::cout << "Unable to get video frame" << std::endl;
-                exit(EXIT_FAILURE);
+                tinyfd_messageBox("Video check", "Couldn't get video frame.", "ok", "error", 1);
+                 return EXIT_FAILURE;
             }
             cv::imshow("Test", test);
 
@@ -94,11 +91,9 @@ cv::VideoCapture load_video(load_video_type type, char * file_loc = NULL)
 
     if (!cap.isOpened())
     {
-        std::cout << "Could not open video" << std::endl;
-        std::exit(EXIT_FAILURE);
+        tinyfd_messageBox("Video check", "Couldn't open video.", "ok", "error", 1);
+        return EXIT_FAILURE;
     }
-    else
-        std::cout << "Opened video" << std::endl;
 
     return cap;
 }
@@ -153,12 +148,18 @@ void information_extraction(cv::Mat &complexI, cv::Mat &output_mag, cv::Mat &out
     cv::Mat planes[2];
     // compute the magnitude and switch to logarithmic scale
     // => log(1 + sqrt(Re(DFT(I))^2 + Im(DFT(I))^2))
-    split(complexI, planes);                   // planes[0] = Re(DFT(I), planes[1] = Im(DFT(I))
-    magnitude(planes[0], planes[1], output_mag);// planes[0] = magnitude
+    split(complexI, planes);                   
+    
+    // planes[0] = Re(DFT(I), planes[1] = Im(DFT(I))
+    magnitude(planes[0], planes[1], output_mag);
+    
+    // planes[0] = magnitude
     phase(planes[0], planes[1], output_phase);
 
     cv::Mat magI = output_mag;
-    magI += cv::Scalar::all(1);                    // switch to logarithmic scale
+    magI += cv::Scalar::all(1);                    
+    
+    // switch to logarithmic scale
     cv::log(magI, magI);
 
     // crop the spectrum, if it has an odd number of rows or columns
@@ -245,7 +246,21 @@ void video_loop(cv::VideoCapture &video_source)
 
 int main()
 {
-    cv::VideoCapture video_source = load_video(LOAD_VIDEO_FILE, "test.mp4");
+    bool resp = tinyfd_messageBox("Input type", "Do you want to use your primary webcam as the input source?\nSelecting 'No' brings up a file dialog.", "yesno", "question", 0);
+
+    cv::VideoCapture video_source;
+
+    if (resp)
+    {
+        video_source = load_video(LOAD_VIDEO_FEED);
+    }
+    else
+    {
+        char const * lFilterPatterns[2] = { "*.mp4", "*.avi" };
+        char const * file_open = tinyfd_openFileDialog("Choose your video file", "", 2, lFilterPatterns, "Video files (.mp4, .avi)", false);
+        video_source = load_video(LOAD_VIDEO_FILE, file_open);
+    }
+
     video_loop(video_source);
     return EXIT_SUCCESS;
 }
