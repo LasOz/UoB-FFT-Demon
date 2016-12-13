@@ -17,19 +17,51 @@ enum load_video_type { LOAD_VIDEO_FILE, LOAD_VIDEO_FEED };
 
 enum visual_type {GET_MAG, GET_PHASE, GET_IMG};
 
+std::string type2str(int type)
+{
+    std::string r;
+
+    uchar depth = type & CV_MAT_DEPTH_MASK;
+    uchar chans = 1 + (type >> CV_CN_SHIFT);
+
+    switch (depth)
+    {
+    case CV_8U:  r = "8U"; break;
+    case CV_8S:  r = "8S"; break;
+    case CV_16U: r = "16U"; break;
+    case CV_16S: r = "16S"; break;
+    case CV_32S: r = "32S"; break;
+    case CV_32F: r = "32F"; break;
+    case CV_64F: r = "64F"; break;
+    default:     r = "User"; break;
+    }
+
+    r += "C";
+    r += (chans + '0');
+
+    return r;
+}
+
 void FFT(cv::Mat &input, cv::Mat &output, int flag)
 {
+    //cv::Mat padded;                            
+    //expand input image to optimal size
+    //int m = cv::getOptimalDFTSize(input.rows);
+    //int n = cv::getOptimalDFTSize(input.cols); 
+    // on the border add zero values
+    //copyMakeBorder(input, padded, 0, m - input.rows, 0, n - input.cols, cv::BORDER_CONSTANT, cv::Scalar::all(0));
+
     //Initialising picture in complex coordinates
     if (flag == cv::DFT_COMPLEX_OUTPUT)
     {
         cv::Mat planes[] = { cv::Mat_<float>(input), cv::Mat::zeros(input.size(), CV_32F) };
         cv::Mat complexI;
-        cv::merge(planes, 2, complexI);
+        merge(planes, 2, complexI);
         //complexI is the image in complex coordinates, the real part is the first channel and the complex part is the second channel.
-        cv::dft(complexI, output, flag);
+        dft(complexI, output, flag);
     }
     else
-        cv::dft(input, output, flag);
+        dft(input, output, flag);
 }
 
 bool load_video(cv::VideoCapture &load_into, load_video_type type, char const * file_loc = NULL)
@@ -105,17 +137,26 @@ void swap_quads(cv::Mat &source)
     tmp.copyTo(q2);
 }
 
+// switch to logarithmic scale
+void log_scale(cv::Mat &source)
+{
+    source += cv::Scalar::all(1);
+    cv::log(source, source);
+}
+
 void information_extraction(cv::Mat &complexI, cv::Mat &output_mag, cv::Mat &output_phase)
 {
     cv::Mat planes[2];
     // compute the magnitude and switch to logarithmic scale
     // => log(1 + sqrt(Re(DFT(I))^2 + Im(DFT(I))^2))
-    cv::split(complexI, planes);                   
+    split(complexI, planes);                   
+    
+    // planes[0] = Re(DFT(I), planes[1] = Im(DFT(I))
+    magnitude(planes[0], planes[1], output_mag);
+    
+    // planes[0] = magnitude
+    phase(planes[0], planes[1], output_phase);
 
-    // planes[0] = Real(DFT(I), planes[1] = Imaginary(DFT(I))
-    cv::cartToPolar(planes[0], planes[1], output_mag, output_phase);
-
-    //Add one to all values
     cv::Mat magI = output_mag;
     magI += cv::Scalar::all(1);                    
     
@@ -123,29 +164,7 @@ void information_extraction(cv::Mat &complexI, cv::Mat &output_mag, cv::Mat &out
     cv::log(magI, magI);
 
     // crop the spectrum, if it has an odd number of rows or columns
-    //output_mag = magI(cv::Rect(0, 0, magI.cols & -2, magI.rows & -2));
-}
-
-void information_injection(cv::Mat &input_mag, cv::Mat &input_phase, cv::Mat &complexI)
-{
-    //input_mag = input_mag(cv::Rect(0, 0, input_mag.cols & -2, input_mag.rows & -2));
-    //input_phase = input_phase(cv::Rect(0, 0, input_mag.cols & -2, input_mag.rows & -2));
-
-    cv::exp(input_mag, input_mag);
-
-    input_mag -= cv::Scalar::all(1);
-
-    cv::Mat real;
-    cv::Mat imaginary;
-
-    cv::polarToCart(input_mag, input_phase, real, imaginary);
-
-    std::vector<cv::Mat> plane_merge;
-
-    plane_merge.push_back(real);
-    plane_merge.push_back(imaginary);
-
-    cv::merge(plane_merge, complexI);
+    output_mag = magI(cv::Rect(0, 0, magI.cols & -2, magI.rows & -2));
 }
 
 void visualise(cv::Mat &input, char * window_name, int flag)
@@ -161,47 +180,7 @@ void visualise(cv::Mat &input, char * window_name, int flag)
     cv::imshow(window_name, visual);
 }
 
-std::string type2str(int type) {
-    std::string r;
-
-    uchar depth = type & CV_MAT_DEPTH_MASK;
-    uchar chans = 1 + (type >> CV_CN_SHIFT);
-
-    switch (depth) {
-    case CV_8U:  r = "8U"; break;
-    case CV_8S:  r = "8S"; break;
-    case CV_16U: r = "16U"; break;
-    case CV_16S: r = "16S"; break;
-    case CV_32S: r = "32S"; break;
-    case CV_32F: r = "32F"; break;
-    case CV_64F: r = "64F"; break;
-    default:     r = "User"; break;
-    }
-
-    r += "C";
-    r += (chans + '0');
-
-    return r;
-}
-
-bool drawing;
-
-void MouseControl(int event, int x, int y, int flags, void * userdata)
-{
-    cv::Mat &image = *((cv::Mat*) userdata);
-    if (event == cv::EVENT_LBUTTONDOWN)
-        drawing = true;
-    if(drawing)
-    {
-        cv::circle(image, cv::Point(x, y), 20, 0, -1);
-    }
-    if (event == cv::EVENT_LBUTTONUP)
-        drawing = false;
-    if (event == cv::EVENT_RBUTTONDBLCLK)
-        image = cv::Mat::ones(image.size(), CV_8UC1);
-}
-
-void frame_analysis(cv::Mat &input, cv::Mat * mask, cv::Mat &output)
+bool frame_analysis(cv::Mat &input, cv::Mat &output)
 {
     cv::imshow("Original", input);
 
@@ -211,26 +190,20 @@ void frame_analysis(cv::Mat &input, cv::Mat * mask, cv::Mat &output)
     FFT(grey, output, cv::DFT_COMPLEX_OUTPUT);
 
     //Extract information
-    cv::Mat phase_spectrum, magnitude_spectrum, masked_magnitude_spectrum;
+    cv::Mat magnitude_spectrum, phase_spectrum;
     information_extraction(output, magnitude_spectrum, phase_spectrum);
-    
-    swap_quads(*mask);
-    cv::setMouseCallback("Magnitude", MouseControl, mask);
-    magnitude_spectrum.copyTo(masked_magnitude_spectrum, *mask);
 
     //Visualise FFT
-    visualise(masked_magnitude_spectrum.clone(), "Magnitude", GET_MAG);
-    visualise(phase_spectrum.clone(), "Angle", GET_PHASE);
-    swap_quads(*mask);
+    visualise(magnitude_spectrum, "Magnitude", GET_MAG);
+    visualise(phase_spectrum, "Angle", GET_PHASE);
 
     //Inverse FFT
-    information_injection(masked_magnitude_spectrum, phase_spectrum, output);
     cv::Mat reverse_components[2];
     FFT(output, input, cv::DFT_REAL_OUTPUT);
 
     //I don't know why I need to flip in x and y axis... Majid I have failed you...
     cv::flip(input, input, -1);
-    cv::split(input, reverse_components);
+    split(input, reverse_components);
     visualise(reverse_components[0], "Reverse", GET_IMG);
 }
 
@@ -245,9 +218,6 @@ int video_loop(cv::VideoCapture &video_source)
     int wait = (CLOCKS_PER_SEC / fps_of_video);
     std::cout << "Video show a frame every " << wait << " milliseconds (" << fps_of_video << " FPS)" << std::endl;
 
-    cv::Mat * mask = new cv::Mat();
-    bool first = true;
-
     while (true)
     {
         if ((end - begin) / wait >= 1)
@@ -261,17 +231,11 @@ int video_loop(cv::VideoCapture &video_source)
             begin = clock();
 
             if (!video_source.read(frame))
-                return EXIT_FAILURE;
+                break;
 
             resize_limit(frame, 720);
-            if (first) 
-            {
-                *mask = cv::Mat::ones(frame.rows, frame.cols, CV_8UC1);
-                first = false;
-            }
-
             cv::putText(frame, std::to_string(FPS), cv::Point(10, frame.rows - 40), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar::all(255), 2, 8);
-            frame_analysis(frame, mask, output);
+            frame_analysis(frame, output);
 
             //Using waitkey's delay is not good for precise frame-rates
             if (cv::waitKey(1) >= 0) break;
@@ -279,7 +243,6 @@ int video_loop(cv::VideoCapture &video_source)
         }
         end = clock();
     }
-    delete mask;
 
     return EXIT_SUCCESS;
 }
