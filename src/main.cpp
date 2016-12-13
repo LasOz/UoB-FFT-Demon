@@ -10,7 +10,7 @@
 #include <ctime>
 
 // Project headers
-#include "tinyfiledialogs.h"
+#include "include/tinyfiledialogs/tinyfiledialogs.h"
 
 //What mode the program will run in
 enum load_video_type { LOAD_VIDEO_FILE, LOAD_VIDEO_FEED };
@@ -64,7 +64,7 @@ void FFT(cv::Mat &input, cv::Mat &output, int flag)
         dft(input, output, flag);
 }
 
-cv::VideoCapture load_video(load_video_type type, char const * file_loc = NULL)
+bool load_video(cv::VideoCapture &load_into, load_video_type type, char const * file_loc = NULL)
 {
     cv::VideoCapture cap;
     if (type == LOAD_VIDEO_FILE)
@@ -80,7 +80,7 @@ cv::VideoCapture load_video(load_video_type type, char const * file_loc = NULL)
             if (!cap.read(test))
             {
                 tinyfd_messageBox("Video check", "Couldn't get video frame.", "ok", "error", 1);
-                 return EXIT_FAILURE;
+                return false;
             }
             cv::imshow("Test", test);
 
@@ -92,10 +92,11 @@ cv::VideoCapture load_video(load_video_type type, char const * file_loc = NULL)
     if (!cap.isOpened())
     {
         tinyfd_messageBox("Video check", "Couldn't open video.", "ok", "error", 1);
-        return EXIT_FAILURE;
+        return false;
     }
 
-    return cap;
+    load_into = cap;
+    return true;
 }
 
 void resize_limit(cv::Mat & input, int max_dim)
@@ -206,7 +207,7 @@ void frame_analysis(cv::Mat &input, cv::Mat &output)
     visualise(reverse_components[0], "Reverse", GET_IMG);
 }
 
-void video_loop(cv::VideoCapture &video_source)
+int video_loop(cv::VideoCapture &video_source)
 {
     cv::Mat frame, output;
 
@@ -242,26 +243,28 @@ void video_loop(cv::VideoCapture &video_source)
         }
         end = clock();
     }
+
+    return EXIT_SUCCESS;
 }
 
 int main()
 {
-    //comment
-    bool resp = tinyfd_messageBox("Input type", "Do you want to use your primary webcam as the input source?\nSelecting 'No' brings up a file dialog.", "yesno", "question", 0);
+    int resp = tinyfd_messageBox("Input type", "Do you want to use your primary webcam as the input source?\nSelecting 'No' brings up a file dialog.", "yesno", "question", 0);
 
     cv::VideoCapture video_source;
 
     if (resp)
     {
-        video_source = load_video(LOAD_VIDEO_FEED);
+        if(!load_video(video_source, LOAD_VIDEO_FEED))
+            return EXIT_FAILURE;
     }
     else
     {
         char const * lFilterPatterns[2] = { "*.mp4", "*.avi" };
         char const * file_open = tinyfd_openFileDialog("Choose your video file", "", 2, lFilterPatterns, "Video files (.mp4, .avi)", false);
-        video_source = load_video(LOAD_VIDEO_FILE, file_open);
+        if(!load_video(video_source, LOAD_VIDEO_FILE, file_open))
+            return EXIT_FAILURE;
     }
 
-    video_loop(video_source);
-    return EXIT_SUCCESS;
+    return video_loop(video_source);
 }
