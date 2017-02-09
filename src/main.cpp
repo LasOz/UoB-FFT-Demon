@@ -219,8 +219,10 @@ void frame_analysis(cv::Mat &input, cv::Mat * mask, cv::Mat &output)
     magnitude_spectrum.copyTo(masked_magnitude_spectrum, *mask);
 
     //Visualise FFT
-    visualise(masked_magnitude_spectrum.clone(), "Magnitude", GET_MAG);
-    visualise(phase_spectrum.clone(), "Angle", GET_PHASE);
+    cv::Mat magnitude_clone = masked_magnitude_spectrum.clone();
+    visualise(magnitude_clone, (char*)"Magnitude", GET_MAG);
+    cv::Mat phase_spectrum_clone = phase_spectrum.clone();
+    visualise(phase_spectrum_clone, (char*)"Angle", GET_PHASE);
     swap_quads(*mask);
 
     //Inverse FFT
@@ -263,7 +265,7 @@ int video_loop(cv::VideoCapture &video_source)
             if (!video_source.read(frame))
                 return EXIT_FAILURE;
 
-            resize_limit(frame, 720);
+            resize_limit(frame, 360);
             if (first) 
             {
                 *mask = cv::Mat::ones(frame.rows, frame.cols, CV_8UC1);
